@@ -68,25 +68,46 @@ namespace Akaunting
             }
         }
 
-        public async Task CreateCustomer()
+        public async Task<Contact> CreateCustomer(string email, string currency_code, string name)
         {
 
-            using (var request = new HttpRequestMessage(new HttpMethod("POST"), "/api/contacts?company_id=akaunting_company_id&search=type:customer&page=akaunting_page&limit=akaunting_limit"))
+            using (var request = new HttpRequestMessage(new HttpMethod("POST"), $"/api/contacts?company_id={AkauntingDefaults.akaunting_company_id}&search=type:customer&page={AkauntingDefaults.akaunting_page}&limit={AkauntingDefaults.akaunting_limit}"))
             {
                 var base64authorization = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{client_id}:{client_secret}"));
                 request.Headers.TryAddWithoutValidation("Authorization", $"Basic {base64authorization}");
+                request.Headers.TryAddWithoutValidation("User-Agent", "C# App");
 
                 var multipartContent = new MultipartFormDataContent();
-                multipartContent.Add(new StringContent("\"customer\""), "type");
-                multipartContent.Add(new StringContent("\"Test Customer 2\""), "name");
-                multipartContent.Add(new StringContent("\"USD\""), "currency_code");
-                multipartContent.Add(new StringContent("\"0\""), "enabled");
-                multipartContent.Add(new StringContent("\"test2@customer.com\""), "email");
+                multipartContent.Add(new StringContent("customer"), "type");
+                multipartContent.Add(new StringContent(name), "name");
+                multipartContent.Add(new StringContent(currency_code), "currency_code");
+                multipartContent.Add(new StringContent("1"), "enabled");
+                multipartContent.Add(new StringContent(email), "email");
                 request.Content = multipartContent;
 
                 HttpResponseMessage responseMessage = await Client.SendAsync(request);
-                AkauntingResponse<Contact> contacts = await JsonSerializer.DeserializeAsync<AkauntingResponse<Contact>>(await responseMessage.Content.ReadAsStreamAsync(), jsonSerializerOptions);
 
+                Contact contact = null;
+
+                if (!responseMessage.IsSuccessStatusCode)
+                {
+                    if (responseMessage.StatusCode == HttpStatusCode.UnprocessableEntity)
+                    {
+                        // The customer already exist, find the ID
+                        contact = null;
+                    }
+                    else
+                    {
+                        responseMessage.EnsureSuccessStatusCode();
+                    }
+                }
+                else
+                {
+                    contact = await JsonSerializer.DeserializeAsync<Contact>(await responseMessage.Content.ReadAsStreamAsync(), jsonSerializerOptions);
+                }
+                
+
+                return contact;
                 //AkauntingResponse
             }
         }
