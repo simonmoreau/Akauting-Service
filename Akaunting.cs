@@ -23,7 +23,7 @@ namespace Akaunting
         public AkauntingService(HttpClient client, IConfiguration configuration)
         {
 
-            client.BaseAddress = new Uri("http://akaunting_url");
+            client.BaseAddress = new Uri(AkauntingDefaults.akaunting_url);
             client.DefaultRequestHeaders.Accept.Clear();
 
             jsonSerializerOptions.Converters.Add(new DateTimeConverterUsingDateTimeParse());
@@ -36,11 +36,64 @@ namespace Akaunting
 
         }
 
+        public async Task Ping()
+        {
+            using (var request = new HttpRequestMessage(new HttpMethod("GET"), $"/api/ping"))
+            {
+                var base64authorization = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{client_id}:{client_secret}"));
+                request.Headers.TryAddWithoutValidation("Authorization", $"Basic {base64authorization}");
+
+                request.Headers.TryAddWithoutValidation("User-Agent", "C# App");
+
+                HttpResponseMessage responseMessage = await Client.SendAsync(request);
+                string responseConteent = await responseMessage.Content.ReadAsStringAsync();
+                AkauntingResponse<Contact> customers = await JsonSerializer.DeserializeAsync<AkauntingResponse<Contact>>(await responseMessage.Content.ReadAsStreamAsync(), jsonSerializerOptions);
+
+            }
+        }
+
+
+        public async Task<List<Contact>> Customers()
+        {
+            using (var request = new HttpRequestMessage(new HttpMethod("GET"), $"/api/contacts?company_id={AkauntingDefaults.akaunting_company_id}&search=type:customer&page={AkauntingDefaults.akaunting_page}&limit={AkauntingDefaults.akaunting_limit}"))
+            {
+                var base64authorization = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{client_id}:{client_secret}"));
+                request.Headers.TryAddWithoutValidation("Authorization", $"Basic {base64authorization}");
+                request.Headers.TryAddWithoutValidation("User-Agent", "C# App");
+
+                HttpResponseMessage responseMessage = await Client.SendAsync(request);
+                AkauntingResponse<Contact> customers = await JsonSerializer.DeserializeAsync<AkauntingResponse<Contact>>(await responseMessage.Content.ReadAsStreamAsync(), jsonSerializerOptions);
+
+                return customers.data;
+            }
+        }
+
+        public async Task CreateCustomer()
+        {
+
+            using (var request = new HttpRequestMessage(new HttpMethod("POST"), "/api/contacts?company_id=akaunting_company_id&search=type:customer&page=akaunting_page&limit=akaunting_limit"))
+            {
+                var base64authorization = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{client_id}:{client_secret}"));
+                request.Headers.TryAddWithoutValidation("Authorization", $"Basic {base64authorization}");
+
+                var multipartContent = new MultipartFormDataContent();
+                multipartContent.Add(new StringContent("\"customer\""), "type");
+                multipartContent.Add(new StringContent("\"Test Customer 2\""), "name");
+                multipartContent.Add(new StringContent("\"USD\""), "currency_code");
+                multipartContent.Add(new StringContent("\"0\""), "enabled");
+                multipartContent.Add(new StringContent("\"test2@customer.com\""), "email");
+                request.Content = multipartContent;
+
+                HttpResponseMessage responseMessage = await Client.SendAsync(request);
+                AkauntingResponse<Contact> contacts = await JsonSerializer.DeserializeAsync<AkauntingResponse<Contact>>(await responseMessage.Content.ReadAsStreamAsync(), jsonSerializerOptions);
+
+                //AkauntingResponse
+            }
+        }
+
         public async Task CreateInvoice()
         {
-            var name = Configuration["Position:Name"];
-
-            using (var request = new HttpRequestMessage(new HttpMethod("POST"), "/documents?company_id=akaunting_company_id&search=type:invoice&page=akaunting_page&limit=akaunting_limit"))
+            using (var request = new HttpRequestMessage(new HttpMethod("POST"), "/api/documents?company_id=akaunting_company_id&search=type:invoice&page=akaunting_page&limit=akaunting_limit"))
             {
 
                 var base64authorization = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{client_id}:{client_secret}"));
@@ -66,9 +119,10 @@ namespace Akaunting
 
         public async Task CreateRevenue()
         {
-            using (var request = new HttpRequestMessage(new HttpMethod("POST"), "/transactions?company_id=akaunting_company_id&search=type:income&page=akaunting_page&limit=akaunting_limit"))
+            using (var request = new HttpRequestMessage(new HttpMethod("POST"), "/api/transactions?company_id=akaunting_company_id&page=akaunting_page&limit=akaunting_limit&search=type:income"))
             {
-                request.Headers.TryAddWithoutValidation("Authorization", "Basic YWthdW50aW5nX2VtYWlsOmFrYXVudGluZ19wYXNzd29yZA==");
+                var base64authorization = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{client_id}:{client_secret}"));
+                request.Headers.TryAddWithoutValidation("Authorization", $"Basic {base64authorization}");
 
                 var multipartContent = new MultipartFormDataContent();
                 multipartContent.Add(new StringContent("\"income\""), "type");
@@ -87,8 +141,66 @@ namespace Akaunting
         }
     }
 
-    class AkauntingDefaults
+    public static class AkauntingDefaults
     {
+        public static string akaunting_url = "https://app.akaunting.com";
+        public static string akaunting_company_id = "101457";
+        public static string akaunting_page = "1";
+        public static string akaunting_limit = "3";
+
+        public static Dictionary<string, string> currencies = new Dictionary<string, string>(){
+            { "USD", "1.2" },
+            { "EUR", "1" },
+        };
+
 
     }
+
+    public class Contact
+    {
+        public int id { get; set; }
+        public int company_id { get; set; }
+        public object user_id { get; set; }
+        public string type { get; set; }
+        public string name { get; set; }
+        public string email { get; set; }
+        public object tax_number { get; set; }
+        public object phone { get; set; }
+        public object address { get; set; }
+        public object website { get; set; }
+        public string currency_code { get; set; }
+        public bool enabled { get; set; }
+        public object reference { get; set; }
+        public object created_by { get; set; }
+        public DateTime created_at { get; set; }
+        public DateTime updated_at { get; set; }
+    }
+
+    public class Links
+    {
+        public string next { get; set; }
+    }
+
+    public class Pagination
+    {
+        public int total { get; set; }
+        public int count { get; set; }
+        public int per_page { get; set; }
+        public int current_page { get; set; }
+        public int total_pages { get; set; }
+        public Links links { get; set; }
+    }
+
+    public class Meta
+    {
+        public Pagination pagination { get; set; }
+    }
+
+    public class AkauntingResponse<T>
+    {
+        public List<T> data { get; set; }
+        public Meta meta { get; set; }
+    }
+
+
 }

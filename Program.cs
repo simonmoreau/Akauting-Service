@@ -23,10 +23,14 @@ namespace Akaunting
 
             try
             {
-                PaypalService paypal = host.Services.GetRequiredService<PaypalService>();
+                // PaypalService paypal = host.Services.GetRequiredService<PaypalService>();
 
-                await paypal.RefreshToken();
-                await paypal.GetLatestTransactions();
+                // await paypal.RefreshToken();
+                // await paypal.GetLatestTransactions();
+
+                AkauntingService akauntingService = host.Services.GetRequiredService<AkauntingService>();
+
+                List<Contact> contacts = await akauntingService.Customers();
 
             }
             catch (Exception ex)
