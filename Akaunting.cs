@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -57,7 +58,7 @@ namespace Akaunting
         {
             using (var request = new HttpRequestMessage(new HttpMethod("GET"), $"/api/contacts?search=type:customer" + AkauntingDefaults.Params()))
             {
-                
+
                 var base64authorization = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{client_id}:{client_secret}"));
                 request.Headers.TryAddWithoutValidation("Authorization", $"Basic {base64authorization}");
                 request.Headers.TryAddWithoutValidation("User-Agent", "C# App");
@@ -74,7 +75,7 @@ namespace Akaunting
 
             using (var request = new HttpRequestMessage(new HttpMethod("POST"), $"/api/contacts?search=type:customer" + AkauntingDefaults.Params()))
             {
-                
+
                 var base64authorization = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{client_id}:{client_secret}"));
                 request.Headers.TryAddWithoutValidation("Authorization", $"Basic {base64authorization}");
                 request.Headers.TryAddWithoutValidation("User-Agent", "C# App");
@@ -129,32 +130,43 @@ namespace Akaunting
             }
         }
 
-        public async Task CreateInvoice()
+        public async Task<Document> CreateInvoice(Contact customer, string currency_code, double amount, DateTime issued_at, int chronos)
         {
             using (var request = new HttpRequestMessage(new HttpMethod("POST"), $"/api/documents?search=type:invoice" + AkauntingDefaults.Params()))
-            { 
+            {
                 var base64authorization = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{client_id}:{client_secret}"));
                 request.Headers.TryAddWithoutValidation("Authorization", $"Basic {base64authorization}");
+                request.Headers.TryAddWithoutValidation("User-Agent", "C# App");
 
                 var multipartContent = new MultipartFormDataContent();
                 multipartContent.Add(new StringContent("invoice"), "type");
-                multipartContent.Add(new StringContent("3"), "document_number");
+                multipartContent.Add(new StringContent(GenerateDocumentNumber(chronos)), "document_number");
                 multipartContent.Add(new StringContent("paid"), "status");
-                multipartContent.Add(new StringContent("2020-01-01 00:00:00"), "issued_at");
-                multipartContent.Add(new StringContent("2020-01-01 00:00:00"), "due_at");
-                multipartContent.Add(new StringContent("10"), "amount");
-                multipartContent.Add(new StringContent("USD"), "currency_code");
-                multipartContent.Add(new StringContent("1"), "currency_rate");
-                multipartContent.Add(new StringContent("14"), "contact_id");
-                multipartContent.Add(new StringContent("Test Customer"), "contact_name");
-                multipartContent.Add(new StringContent("1"), "category_id");
+                multipartContent.Add(new StringContent(issued_at.ToString("yyyy-MM-dd HH:mm:ss")), "issued_at");
+                multipartContent.Add(new StringContent(issued_at.ToString("yyyy-MM-dd HH:mm:ss")), "due_at");
+                multipartContent.Add(new StringContent(amount.ToString()), "amount");
+                multipartContent.Add(new StringContent(currency_code), "currency_code");
+                multipartContent.Add(new StringContent(AkauntingDefaults.currencies[currency_code]), "currency_rate");
+                multipartContent.Add(new StringContent(customer.id.ToString()), "contact_id");
+                multipartContent.Add(new StringContent(customer.name), "contact_name");
+                multipartContent.Add(new StringContent(customer.name), "contact_email");
+                multipartContent.Add(new StringContent("650150"), "category_id");
                 request.Content = multipartContent;
 
                 HttpResponseMessage responseMessage = await Client.SendAsync(request);
+                Document document = await JsonSerializer.DeserializeAsync<Document>(await responseMessage.Content.ReadAsStreamAsync(), jsonSerializerOptions);
+                return document;
             }
         }
 
-                public async Task<List<Transaction>> Incomes()
+        private string GenerateDocumentNumber(int chronos)
+        {
+            string date = DateTime.Now.ToString("yyyyMMdd", DateTimeFormatInfo.InvariantInfo);
+            string chronosText = chronos.ToString("D5");
+            return $"{date}-{chronosText}";
+        }
+
+        public async Task<List<Transaction>> Incomes()
         {
             using (var request = new HttpRequestMessage(new HttpMethod("GET"), $"/api/transactions?search=type:income" + AkauntingDefaults.Params()))
             {
@@ -169,26 +181,30 @@ namespace Akaunting
             }
         }
 
-        public async Task CreateRevenue()
+        public async Task<Transaction> CreateRevenue(Contact customer, Document invoice, DateTime paid_at, double amount, string currency_code)
         {
             using (var request = new HttpRequestMessage(new HttpMethod("POST"), $"/api/transactions?search=type:income" + AkauntingDefaults.Params()))
             {
                 var base64authorization = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{client_id}:{client_secret}"));
                 request.Headers.TryAddWithoutValidation("Authorization", $"Basic {base64authorization}");
+                request.Headers.TryAddWithoutValidation("User-Agent", "C# App");
 
                 var multipartContent = new MultipartFormDataContent();
-                multipartContent.Add(new StringContent("\"income\""), "type");
-                multipartContent.Add(new StringContent("\"1\""), "account_id");
-                multipartContent.Add(new StringContent("\"2020-01-01 00:00:00\""), "paid_at");
-                multipartContent.Add(new StringContent("\"10\""), "amount");
-                multipartContent.Add(new StringContent("\"USD\""), "currency_code");
-                multipartContent.Add(new StringContent("\"1\""), "currency_rate");
-                multipartContent.Add(new StringContent("\"3\""), "category_id");
-                multipartContent.Add(new StringContent("\"Cash\""), "payment_method");
-                multipartContent.Add(new StringContent("\"3\""), "document_id");
+                multipartContent.Add(new StringContent("income"), "type");
+                multipartContent.Add(new StringContent("131218"), "account_id");
+                multipartContent.Add(new StringContent(paid_at.ToString("yyyy-MM-dd HH:mm:ss")), "paid_at");
+                multipartContent.Add(new StringContent(amount.ToString()), "amount");
+                multipartContent.Add(new StringContent(currency_code), "currency_code");
+                multipartContent.Add(new StringContent(AkauntingDefaults.currencies[currency_code]), "currency_rate");
+                multipartContent.Add(new StringContent("650150"), "category_id");
+                multipartContent.Add(new StringContent(customer.id.ToString()), "contact_id");
+                multipartContent.Add(new StringContent("Cash"), "payment_method");
+                multipartContent.Add(new StringContent(invoice.id.ToString()), "document_id");
                 request.Content = multipartContent;
 
                 HttpResponseMessage responseMessage = await Client.SendAsync(request);
+                Transaction income = await JsonSerializer.DeserializeAsync<Transaction>(await responseMessage.Content.ReadAsStreamAsync(), jsonSerializerOptions);
+                return income;
             }
         }
     }
@@ -198,7 +214,7 @@ namespace Akaunting
         public static string akaunting_url = "https://app.akaunting.com";
         public static string akaunting_company_id = "101457";
         public static string akaunting_page = "1";
-        public static string akaunting_limit = "100";
+        public static string akaunting_limit = "8";
 
         public static Dictionary<string, string> currencies = new Dictionary<string, string>(){
             { "USD", "1.2" },

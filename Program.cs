@@ -33,7 +33,14 @@ namespace Akaunting
                 List<Contact> customers = await akauntingService.Customers();
                 List<Document> invoices = await akauntingService.Invoices();
                 List<Transaction> incomes = await akauntingService.Incomes();
+
+                for (int i = 3; i < 6; i++)
+                {
+                    Document invoice = await akauntingService.CreateInvoice(customers[i],"USD",10*i,DateTime.Now,i);
+                    Transaction revenue = await akauntingService.CreateRevenue(customers[i],invoice,DateTime.Now,10*i,"USD");
+                }
                 
+
                 // Contact contact = await akauntingService.CreateCustomer("Aaron@elitesurvey.com.au","USD","Aaron mccann");
 
             }
