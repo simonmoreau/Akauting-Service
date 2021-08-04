@@ -24,8 +24,6 @@ namespace Akaunting
         public AkauntingService(HttpClient client, IConfiguration configuration)
         {
 
-            client.BaseAddress = new Uri(AkauntingDefaults.akaunting_url);
-            client.DefaultRequestHeaders.Accept.Clear();
 
             jsonSerializerOptions.Converters.Add(new DateTimeConverterUsingDateTimeParse());
 
@@ -34,6 +32,11 @@ namespace Akaunting
 
             client_id = Configuration["Akaunting:client_id"];
             client_secret = Configuration["Akaunting:client_secret"];
+            AkauntingDefaults.akaunting_url = Configuration["Akaunting:uri"];
+            AkauntingDefaults.akaunting_company_id = Configuration["company_id"];
+
+            Client.BaseAddress = new Uri(AkauntingDefaults.akaunting_url);
+            Client.DefaultRequestHeaders.Accept.Clear();
 
         }
 
@@ -67,9 +70,26 @@ namespace Akaunting
             return accounts.data;
         }
 
+        public async Task<Account> CreateAccount(CreatedAccount createdAccount)
+        {
+            AccountBody accountBody = new AccountBody(createdAccount.name, createdAccount.currency_code);
+            AkauntingResponse<Account> accounts = await SendAsync<AkauntingResponse<Account>>("accounts?", "POST", accountBody);
+
+            return accounts.data;
+        }
+
         public async Task<List<Category>> Categories()
         {
             AkauntingResponses<Category> categories = await SendAsync<AkauntingResponses<Category>>("categories?", "GET", null);
+
+            return categories.data;
+        }
+
+
+        public async Task<Category> CreateCategory(CreatedCategory category)
+        {
+            CategoryBody categoryBody = new CategoryBody(category.name, category.color, category.type);
+            AkauntingResponse<Category> categories = await SendAsync<AkauntingResponse<Category>>("categories?", "POST", categoryBody);
 
             return categories.data;
         }
@@ -84,10 +104,26 @@ namespace Akaunting
 
         public async Task<Contact> CreateCustomer(string email, string currency_code, string name)
         {
-            ContactBody contactBody = new ContactBody(name, email, currency_code);
+            ContactBody contactBody = new ContactBody(name, email, currency_code, "customer");
             AkauntingResponse<Contact> customer = await SendAsync<AkauntingResponse<Contact>>("contacts?search=type:customer", "POST", contactBody);
 
             return customer.data;
+        }
+
+        public async Task<List<Contact>> Vendors()
+        {
+
+            AkauntingResponses<Contact> vendors = await SendAsync<AkauntingResponses<Contact>>("contacts?search=type:vendor", "GET", null);
+
+            return vendors.data;
+        }
+
+        public async Task<Contact> CreateVendor(CreatedVendor createdVendor)
+        {
+            ContactBody contactBody = new ContactBody(createdVendor.name, createdVendor.email, createdVendor.currency_code, "vendor");
+            AkauntingResponse<Contact> vendor = await SendAsync<AkauntingResponse<Contact>>("contacts?search=type:vendor", "POST", contactBody);
+
+            return vendor.data;
         }
 
         public async Task<List<Document>> Invoices()
@@ -112,12 +148,27 @@ namespace Akaunting
             return incomes.data;
         }
 
-        public async Task<Transaction> CreateRevenue(Account account, Document invoice, Category category)
+        public async Task<Transaction> CreateIncome(Account account, Document invoice, Category category, Contact contact)
         {
-            TransactionBody transactionbody = new TransactionBody(account, category, "Cash", invoice);
+            TransactionBody transactionbody = new TransactionBody(account, category, "Bank Transfer", invoice, contact);
             AkauntingResponse<Transaction> income = await SendAsync<AkauntingResponse<Transaction>>("transactions?search=type:income", "POST", transactionbody);
 
             return income.data;
+        }
+
+        public async Task<List<Transaction>> Expenses()
+        {
+            AkauntingResponses<Transaction> expenses = await SendAsync<AkauntingResponses<Transaction>>("transactions?search=type:expense", "GET", null);
+
+            return expenses.data;
+        }
+
+        public async Task<Transaction> CreateExpense(Account account, Document invoice, Category category, Contact contact)
+        {
+            TransactionBody transactionbody = new TransactionBody(account, category, "Bank Transfer", contact, 0.2, invoice.created_at);
+            AkauntingResponse<Transaction> expense = await SendAsync<AkauntingResponse<Transaction>>("transactions?search=type:expense", "POST", transactionbody);
+
+            return expense.data;
         }
 
         private async Task<T> SendAsync<T>(string uri, string method, object content)
@@ -174,11 +225,11 @@ namespace Akaunting
 
     public class TransactionBody
     {
-        public TransactionBody(Account account, Category category, string payment_method, Document invoice)
+        public TransactionBody(Account account, Category category, string payment_method, Document invoice, Contact contact)
         {
             this.type = "income";
             this.account_id = account.id;
-            this.contact_id = invoice.contact_id;
+            this.contact_id = contact.id;
             this.paid_at = invoice.due_at.ToString("yyyy-MM-dd HH:mm:ss");
             this.amount = invoice.amount;
             this.currency_code = account.currency_code;
@@ -186,6 +237,20 @@ namespace Akaunting
             this.category_id = category.id;
             this.payment_method = payment_method;
             this.document_id = invoice.id;
+        }
+
+        public TransactionBody(Account account, Category category, string payment_method, Contact contact, double amount, DateTime paid_at)
+        {
+            this.type = "expense";
+            this.account_id = account.id;
+            this.contact_id = contact.id;
+            this.paid_at = paid_at.ToString("yyyy-MM-dd HH:mm:ss");
+            this.amount = amount;
+            this.currency_code = account.currency_code;
+            this.currency_rate = AkauntingDefaults.currencies[account.currency_code];
+            this.category_id = category.id;
+            this.payment_method = payment_method;
+            this.document_id = null;
         }
         public string type { get; set; }
         public int account_id { get; set; }
@@ -196,15 +261,52 @@ namespace Akaunting
         public string currency_rate { get; set; }
         public int? category_id { get; set; }
         public string payment_method { get; set; }
-        public int document_id { get; set; }
+        public int? document_id { get; set; }
+    }
+
+    public class CategoryBody
+    {
+        public CategoryBody(string name, string color, string type)
+        {
+            this.type = type;
+            this.name = name;
+            this.color = color;
+            this.enabled = true;
+        }
+        public string type { get; set; }
+        public string name { get; set; }
+        public string color { get; set; }
+        public bool enabled { get; set; }
+    }
+
+    public class AccountBody
+    {
+        public AccountBody(string name, string currency_code)
+        {
+            this.name = name;
+            this.bank_name = name;
+            this.number = 0;
+            this.currency_code = currency_code;
+            this.bank_phone = "";
+            this.bank_address = "";
+            this.enabled = 1;
+        }
+        public string name { get; set; }
+        public int number { get; set; }
+        public string currency_code { get; set; }
+        public int opening_balance { get; set; }
+        public string bank_name { get; set; }
+        public object bank_phone { get; set; }
+        public string bank_address { get; set; }
+        public int enabled { get; set; }
     }
 
 
     public class ContactBody
     {
-        public ContactBody(string name, string email, string currency_code)
+        public ContactBody(string name, string email, string currency_code, string type)
         {
-            this.type = "customer";
+            this.type = type;
             this.name = name;
             this.email = email;
             this.currency_code = currency_code;
@@ -271,10 +373,10 @@ namespace Akaunting
         private List<TotalBody> CreateTotals(Item item, int quantity)
         {
             double amount = item.sale_price * quantity;
-           List<TotalBody> totals  = new List<TotalBody>();
-           totals.Add(new TotalBody(amount,"invoices.sub_total","sub_total",1));
-           totals.Add(new TotalBody(amount,"invoices.total","total",2));
-           return totals;
+            List<TotalBody> totals = new List<TotalBody>();
+            totals.Add(new TotalBody(amount, "invoices.sub_total", "sub_total", 1));
+            totals.Add(new TotalBody(amount, "invoices.total", "total", 2));
+            return totals;
         }
 
         private string GenerateDocumentNumber(DateTime issuedAt, int chronos)
@@ -350,7 +452,7 @@ namespace Akaunting
         public int id { get; set; }
         public int company_id { get; set; }
         public string type { get; set; }
-        public int document_id { get; set; }
+        public int? document_id { get; set; }
         public string status { get; set; }
         public int notify { get; set; }
         public string description { get; set; }
@@ -408,7 +510,7 @@ namespace Akaunting
         public int id { get; set; }
         public int company_id { get; set; }
         public string type { get; set; }
-        public int document_id { get; set; }
+        public int? document_id { get; set; }
         public int? item_id { get; set; }
         public string name { get; set; }
         public double price { get; set; }
@@ -426,7 +528,7 @@ namespace Akaunting
         public int id { get; set; }
         public int company_id { get; set; }
         public string type { get; set; }
-        public int document_id { get; set; }
+        public int? document_id { get; set; }
         public string code { get; set; }
         public string name { get; set; }
         public double amount { get; set; }
@@ -456,6 +558,43 @@ namespace Akaunting
         public DateTime updated_at { get; set; }
     }
 
+    public class CreatedCategory
+    {
+        public CreatedCategory(string name, string type, string color)
+        {
+            this.name = name;
+            this.type = type;
+            this.color = color;
+        }
+        public string name { get; set; }
+        public string type { get; set; }
+        public string color { get; set; }
+    }
+
+    public class CreatedVendor
+    {
+        public CreatedVendor(string name, string email, string currency_code)
+        {
+            this.name = name;
+            this.email = email;
+            this.currency_code = currency_code;
+        }
+        public string name { get; set; }
+        public string email { get; set; }
+        public string currency_code { get; set; }
+    }
+
+    public class CreatedAccount
+    {
+        public CreatedAccount(string name, string currency_code)
+        {
+            this.name = name;
+            this.currency_code = currency_code;
+        }
+        public string name { get; set; }
+        public string currency_code { get; set; }
+    }
+
     public class Category
     {
         public int? id { get; set; }
@@ -480,7 +619,7 @@ namespace Akaunting
         public string amount_formatted { get; set; }
         public string currency_code { get; set; }
         public double currency_rate { get; set; }
-        public int document_id { get; set; }
+        public int? document_id { get; set; }
         public int contact_id { get; set; }
         public string description { get; set; }
         public int? category_id { get; set; }
@@ -567,7 +706,7 @@ namespace Akaunting
         public Meta meta { get; set; }
     }
 
-        public class AkauntingResponse<T>
+    public class AkauntingResponse<T>
     {
         public T data { get; set; }
     }
