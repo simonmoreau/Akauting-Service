@@ -11,6 +11,7 @@ namespace Akaunting
         public override DateTime Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
             Debug.Assert(typeToConvert == typeof(DateTime));
+            if (reader.GetString() == "") {return new DateTime();};
             return DateTime.Parse(reader.GetString());
         }
 

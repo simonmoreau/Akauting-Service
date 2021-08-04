@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
@@ -30,16 +31,25 @@ namespace Akaunting
 
                 AkauntingService akauntingService = host.Services.GetRequiredService<AkauntingService>();
 
+                List<Account> accounts = await akauntingService.Accounts();
+                Account account = accounts.Where(x => x.name == "Paypal").FirstOrDefault();
+
+                List<Item> items = await akauntingService.Items();
+                Item item = items.Where(x => x.name == "Group Clashes").FirstOrDefault();
+
+                List<Category> categories = await akauntingService.Categories();
+                Category category = categories.Where(x => x.name == "Plugin").FirstOrDefault();
+
                 List<Contact> customers = await akauntingService.Customers();
                 List<Document> invoices = await akauntingService.Invoices();
                 List<Transaction> incomes = await akauntingService.Incomes();
 
-                for (int i = 3; i < 6; i++)
+                for (int i = 1; i < 6; i++)
                 {
-                    Document invoice = await akauntingService.CreateInvoice(customers[i],"USD",10*i,DateTime.Now,i);
-                    Transaction revenue = await akauntingService.CreateRevenue(customers[i],invoice,DateTime.Now,10*i,"USD");
+                    Document invoice = await akauntingService.CreateInvoice(customers[i], account.currency_code, DateTime.Now, i, item, i, category);
+                    Transaction revenue = await akauntingService.CreateRevenue(account, invoice, category);
                 }
-                
+
 
                 // Contact contact = await akauntingService.CreateCustomer("Aaron@elitesurvey.com.au","USD","Aaron mccann");
 

@@ -48,163 +48,104 @@ namespace Akaunting
 
                 HttpResponseMessage responseMessage = await Client.SendAsync(request);
                 string responseConteent = await responseMessage.Content.ReadAsStringAsync();
-                AkauntingResponse<Contact> customers = await JsonSerializer.DeserializeAsync<AkauntingResponse<Contact>>(await responseMessage.Content.ReadAsStreamAsync(), jsonSerializerOptions);
+                AkauntingResponses<Contact> customers = await JsonSerializer.DeserializeAsync<AkauntingResponses<Contact>>(await responseMessage.Content.ReadAsStreamAsync(), jsonSerializerOptions);
 
             }
         }
 
+        public async Task<List<Item>> Items()
+        {
+            AkauntingResponses<Item> items = await SendAsync<AkauntingResponses<Item>>("items?", "GET", null);
+
+            return items.data;
+        }
+
+        public async Task<List<Account>> Accounts()
+        {
+            AkauntingResponses<Account> accounts = await SendAsync<AkauntingResponses<Account>>("accounts?", "GET", null);
+
+            return accounts.data;
+        }
+
+        public async Task<List<Category>> Categories()
+        {
+            AkauntingResponses<Category> categories = await SendAsync<AkauntingResponses<Category>>("categories?", "GET", null);
+
+            return categories.data;
+        }
 
         public async Task<List<Contact>> Customers()
         {
-            using (var request = new HttpRequestMessage(new HttpMethod("GET"), $"/api/contacts?search=type:customer" + AkauntingDefaults.Params()))
-            {
 
-                var base64authorization = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{client_id}:{client_secret}"));
-                request.Headers.TryAddWithoutValidation("Authorization", $"Basic {base64authorization}");
-                request.Headers.TryAddWithoutValidation("User-Agent", "C# App");
+            AkauntingResponses<Contact> customers = await SendAsync<AkauntingResponses<Contact>>("contacts?search=type:customer", "GET", null);
 
-                HttpResponseMessage responseMessage = await Client.SendAsync(request);
-                AkauntingResponse<Contact> customers = await JsonSerializer.DeserializeAsync<AkauntingResponse<Contact>>(await responseMessage.Content.ReadAsStreamAsync(), jsonSerializerOptions);
-
-                return customers.data;
-            }
+            return customers.data;
         }
 
         public async Task<Contact> CreateCustomer(string email, string currency_code, string name)
         {
+            ContactBody contactBody = new ContactBody(name, email, currency_code);
+            AkauntingResponse<Contact> customer = await SendAsync<AkauntingResponse<Contact>>("contacts?search=type:customer", "POST", contactBody);
 
-            using (var request = new HttpRequestMessage(new HttpMethod("POST"), $"/api/contacts?search=type:customer" + AkauntingDefaults.Params()))
-            {
-
-                var base64authorization = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{client_id}:{client_secret}"));
-                request.Headers.TryAddWithoutValidation("Authorization", $"Basic {base64authorization}");
-                request.Headers.TryAddWithoutValidation("User-Agent", "C# App");
-
-                var multipartContent = new MultipartFormDataContent();
-                multipartContent.Add(new StringContent("customer"), "type");
-                multipartContent.Add(new StringContent(name), "name");
-                multipartContent.Add(new StringContent(currency_code), "currency_code");
-                multipartContent.Add(new StringContent("1"), "enabled");
-                multipartContent.Add(new StringContent(email), "email");
-                request.Content = multipartContent;
-
-                HttpResponseMessage responseMessage = await Client.SendAsync(request);
-
-                Contact contact = null;
-
-                if (!responseMessage.IsSuccessStatusCode)
-                {
-                    if (responseMessage.StatusCode == HttpStatusCode.UnprocessableEntity)
-                    {
-                        // The customer already exist, find the ID
-                        contact = null;
-                    }
-                    else
-                    {
-                        responseMessage.EnsureSuccessStatusCode();
-                    }
-                }
-                else
-                {
-                    contact = await JsonSerializer.DeserializeAsync<Contact>(await responseMessage.Content.ReadAsStreamAsync(), jsonSerializerOptions);
-                }
-
-
-                return contact;
-                //AkauntingResponse
-            }
+            return customer.data;
         }
 
         public async Task<List<Document>> Invoices()
         {
-            using (var request = new HttpRequestMessage(new HttpMethod("GET"), $"/api/documents?search=type:invoice" + AkauntingDefaults.Params()))
-            {
-                var base64authorization = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{client_id}:{client_secret}"));
-                request.Headers.TryAddWithoutValidation("Authorization", $"Basic {base64authorization}");
-                request.Headers.TryAddWithoutValidation("User-Agent", "C# App");
+            AkauntingResponses<Document> invoices = await SendAsync<AkauntingResponses<Document>>("documents?search=type:invoice", "GET", null);
 
-                HttpResponseMessage responseMessage = await Client.SendAsync(request);
-                AkauntingResponse<Document> invoices = await JsonSerializer.DeserializeAsync<AkauntingResponse<Document>>(await responseMessage.Content.ReadAsStreamAsync(), jsonSerializerOptions);
-
-                return invoices.data;
-            }
+            return invoices.data;
         }
 
-        public async Task<Document> CreateInvoice(Contact customer, string currency_code, double amount, DateTime issued_at, int chronos)
+        public async Task<Document> CreateInvoice(Contact customer, string currency_code, DateTime issued_at, int chronos, Item item, int quantity, Category category)
         {
-            using (var request = new HttpRequestMessage(new HttpMethod("POST"), $"/api/documents?search=type:invoice" + AkauntingDefaults.Params()))
-            {
-                var base64authorization = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{client_id}:{client_secret}"));
-                request.Headers.TryAddWithoutValidation("Authorization", $"Basic {base64authorization}");
-                request.Headers.TryAddWithoutValidation("User-Agent", "C# App");
+            InvoiceBody invoiceBody = new InvoiceBody(currency_code, issued_at, chronos, customer, item, quantity, category);
+            AkauntingResponse<Document> invoice = await SendAsync<AkauntingResponse<Document>>("documents?search=type:invoice", "POST", invoiceBody);
 
-                var multipartContent = new MultipartFormDataContent();
-                multipartContent.Add(new StringContent("invoice"), "type");
-                multipartContent.Add(new StringContent(GenerateDocumentNumber(chronos)), "document_number");
-                multipartContent.Add(new StringContent("paid"), "status");
-                multipartContent.Add(new StringContent(issued_at.ToString("yyyy-MM-dd HH:mm:ss")), "issued_at");
-                multipartContent.Add(new StringContent(issued_at.ToString("yyyy-MM-dd HH:mm:ss")), "due_at");
-                multipartContent.Add(new StringContent(amount.ToString()), "amount");
-                multipartContent.Add(new StringContent(currency_code), "currency_code");
-                multipartContent.Add(new StringContent(AkauntingDefaults.currencies[currency_code]), "currency_rate");
-                multipartContent.Add(new StringContent(customer.id.ToString()), "contact_id");
-                multipartContent.Add(new StringContent(customer.name), "contact_name");
-                multipartContent.Add(new StringContent(customer.name), "contact_email");
-                multipartContent.Add(new StringContent("650150"), "category_id");
-                request.Content = multipartContent;
-
-                HttpResponseMessage responseMessage = await Client.SendAsync(request);
-                Document document = await JsonSerializer.DeserializeAsync<Document>(await responseMessage.Content.ReadAsStreamAsync(), jsonSerializerOptions);
-                return document;
-            }
-        }
-
-        private string GenerateDocumentNumber(int chronos)
-        {
-            string date = DateTime.Now.ToString("yyyyMMdd", DateTimeFormatInfo.InvariantInfo);
-            string chronosText = chronos.ToString("D5");
-            return $"{date}-{chronosText}";
+            return invoice.data;
         }
 
         public async Task<List<Transaction>> Incomes()
         {
-            using (var request = new HttpRequestMessage(new HttpMethod("GET"), $"/api/transactions?search=type:income" + AkauntingDefaults.Params()))
-            {
-                var base64authorization = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{client_id}:{client_secret}"));
-                request.Headers.TryAddWithoutValidation("Authorization", $"Basic {base64authorization}");
-                request.Headers.TryAddWithoutValidation("User-Agent", "C# App");
+            AkauntingResponses<Transaction> incomes = await SendAsync<AkauntingResponses<Transaction>>("transactions?search=type:income", "GET", null);
 
-                HttpResponseMessage responseMessage = await Client.SendAsync(request);
-                AkauntingResponse<Transaction> incomes = await JsonSerializer.DeserializeAsync<AkauntingResponse<Transaction>>(await responseMessage.Content.ReadAsStreamAsync(), jsonSerializerOptions);
-
-                return incomes.data;
-            }
+            return incomes.data;
         }
 
-        public async Task<Transaction> CreateRevenue(Contact customer, Document invoice, DateTime paid_at, double amount, string currency_code)
+        public async Task<Transaction> CreateRevenue(Account account, Document invoice, Category category)
         {
-            using (var request = new HttpRequestMessage(new HttpMethod("POST"), $"/api/transactions?search=type:income" + AkauntingDefaults.Params()))
+            TransactionBody transactionbody = new TransactionBody(account, category, "Cash", invoice);
+            AkauntingResponse<Transaction> income = await SendAsync<AkauntingResponse<Transaction>>("transactions?search=type:income", "POST", transactionbody);
+
+            return income.data;
+        }
+
+        private async Task<T> SendAsync<T>(string uri, string method, object content)
+        {
+            string separator = "&";
+            if (uri.Substring(uri.Length - 1) == "?")
+            {
+                separator = "";
+            }
+
+            using (var request = new HttpRequestMessage(new HttpMethod(method), $"/api/{uri}" + separator + AkauntingDefaults.Params()))
             {
                 var base64authorization = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{client_id}:{client_secret}"));
                 request.Headers.TryAddWithoutValidation("Authorization", $"Basic {base64authorization}");
                 request.Headers.TryAddWithoutValidation("User-Agent", "C# App");
 
-                var multipartContent = new MultipartFormDataContent();
-                multipartContent.Add(new StringContent("income"), "type");
-                multipartContent.Add(new StringContent("131218"), "account_id");
-                multipartContent.Add(new StringContent(paid_at.ToString("yyyy-MM-dd HH:mm:ss")), "paid_at");
-                multipartContent.Add(new StringContent(amount.ToString()), "amount");
-                multipartContent.Add(new StringContent(currency_code), "currency_code");
-                multipartContent.Add(new StringContent(AkauntingDefaults.currencies[currency_code]), "currency_rate");
-                multipartContent.Add(new StringContent("650150"), "category_id");
-                multipartContent.Add(new StringContent(customer.id.ToString()), "contact_id");
-                multipartContent.Add(new StringContent("Cash"), "payment_method");
-                multipartContent.Add(new StringContent(invoice.id.ToString()), "document_id");
-                request.Content = multipartContent;
+                if (content != null)
+                {
+                    string serializedBody = JsonSerializer.Serialize(content);
+                    request.Content = new StringContent(serializedBody);
+                    request.Content.Headers.ContentType = MediaTypeHeaderValue.Parse("application/json");
+                }
 
                 HttpResponseMessage responseMessage = await Client.SendAsync(request);
-                Transaction income = await JsonSerializer.DeserializeAsync<Transaction>(await responseMessage.Content.ReadAsStreamAsync(), jsonSerializerOptions);
-                return income;
+                responseMessage.EnsureSuccessStatusCode();
+                T reponse = await JsonSerializer.DeserializeAsync<T>(await responseMessage.Content.ReadAsStreamAsync(), jsonSerializerOptions);
+
+                return reponse;
             }
         }
     }
@@ -223,10 +164,148 @@ namespace Akaunting
 
         public static string Params()
         {
-            return $"&company_id={akaunting_company_id}&page={akaunting_page}&limit={akaunting_limit}";
+            return $"company_id={akaunting_company_id}&page={akaunting_page}&limit={akaunting_limit}";
         }
 
     }
+
+    #region  POST body classes
+
+
+    public class TransactionBody
+    {
+        public TransactionBody(Account account, Category category, string payment_method, Document invoice)
+        {
+            this.type = "income";
+            this.account_id = account.id;
+            this.contact_id = invoice.contact_id;
+            this.paid_at = invoice.due_at.ToString("yyyy-MM-dd HH:mm:ss");
+            this.amount = invoice.amount;
+            this.currency_code = account.currency_code;
+            this.currency_rate = AkauntingDefaults.currencies[account.currency_code];
+            this.category_id = category.id;
+            this.payment_method = payment_method;
+            this.document_id = invoice.id;
+        }
+        public string type { get; set; }
+        public int account_id { get; set; }
+        public int contact_id { get; set; }
+        public string paid_at { get; set; }
+        public double amount { get; set; }
+        public string currency_code { get; set; }
+        public string currency_rate { get; set; }
+        public int? category_id { get; set; }
+        public string payment_method { get; set; }
+        public int document_id { get; set; }
+    }
+
+
+    public class ContactBody
+    {
+        public ContactBody(string name, string email, string currency_code)
+        {
+            this.type = "customer";
+            this.name = name;
+            this.email = email;
+            this.currency_code = currency_code;
+            this.enabled = 1;
+        }
+        public string type { get; set; }
+        public string name { get; set; }
+        public string currency_code { get; set; }
+        public int enabled { get; set; }
+        public string email { get; set; }
+    }
+    public class ItemBody
+    {
+        public ItemBody(Item item, int quantity)
+        {
+            this.item_id = item.id;
+            this.name = item.name;
+            this.quantity = quantity;
+            this.price = item.sale_price;
+        }
+        public int item_id { get; set; }
+        public string name { get; set; }
+        public int quantity { get; set; }
+        public double price { get; set; }
+    }
+
+    public class TotalBody
+    {
+        public TotalBody(double amount, string name, string code, int sort_order)
+        {
+            this.amount = amount;
+            this.name = name;
+            this.code = code;
+            this.sort_order = sort_order;
+        }
+        public string name { get; set; }
+        public string code { get; set; }
+        public int sort_order { get; set; }
+        public double amount { get; set; }
+    }
+
+    public class InvoiceBody
+    {
+        public InvoiceBody(string currency_code, DateTime issuedAt, int chronos, Contact customer, Item item, int quantity, Category category)
+        {
+            this.type = "invoice";
+            this.document_number = GenerateDocumentNumber(issuedAt, chronos);
+            this.status = "paid";
+            this.issued_at = issuedAt.ToString("yyyy-MM-dd HH:mm:ss");
+            this.due_at = issuedAt.ToString("yyyy-MM-dd HH:mm:ss");
+            this.amount = 0;
+            this.currency_code = currency_code;
+            this.currency_rate = AkauntingDefaults.currencies[currency_code];
+            this.contact_id = customer.id;
+            this.contact_name = customer.name;
+            this.contact_email = customer.email;
+            this.category_id = category.id;
+            // this.totals = CreateTotals(item,quantity);
+            this.items = new List<ItemBody>();
+            this.items.Add(new ItemBody(item, quantity));
+
+        }
+
+        private List<TotalBody> CreateTotals(Item item, int quantity)
+        {
+            double amount = item.sale_price * quantity;
+           List<TotalBody> totals  = new List<TotalBody>();
+           totals.Add(new TotalBody(amount,"invoices.sub_total","sub_total",1));
+           totals.Add(new TotalBody(amount,"invoices.total","total",2));
+           return totals;
+        }
+
+        private string GenerateDocumentNumber(DateTime issuedAt, int chronos)
+        {
+            string date = issuedAt.ToString("yyyyMMdd", DateTimeFormatInfo.InvariantInfo);
+            string chronosText = chronos.ToString("D5");
+            return $"{date}-{chronosText}";
+        }
+
+        public string type { get; set; }
+        public string document_number { get; set; }
+        public object order_number { get; set; }
+        public string status { get; set; }
+        public string issued_at { get; set; }
+        public string due_at { get; set; }
+        public double amount { get; set; }
+        public string currency_code { get; set; }
+        public string currency_rate { get; set; }
+        public int contact_id { get; set; }
+        public string contact_name { get; set; }
+        public string contact_email { get; set; }
+        public int? category_id { get; set; }
+        public List<ItemBody> items { get; set; }
+        public List<TotalBody> totals { get; set; }
+    }
+
+
+
+    #endregion
+
+    #region Akaunting classes
 
     public class Contact
     {
@@ -283,9 +362,54 @@ namespace Akaunting
     {
         public int id { get; set; }
         public int company_id { get; set; }
+        public string name { get; set; }
+        public object description { get; set; }
+        public double sale_price { get; set; }
+        public string sale_price_formatted { get; set; }
+        public double purchase_price { get; set; }
+        public string purchase_price_formatted { get; set; }
+        public int? category_id { get; set; }
+        public List<string> tax_ids { get; set; }
+        public bool picture { get; set; }
+        public bool enabled { get; set; }
+        public object created_by { get; set; }
+        public DateTime created_at { get; set; }
+        public DateTime updated_at { get; set; }
+        public Data<Category> category { get; set; }
+        public DataList<ItemTax> taxes { get; set; }
+    }
+
+    public class Tax
+    {
+        public object id { get; set; }
+        public object company_id { get; set; }
+        public string name { get; set; }
+        public int rate { get; set; }
+        public object enabled { get; set; }
+        public object created_by { get; set; }
+        public string created_at { get; set; }
+        public string updated_at { get; set; }
+    }
+
+    public class ItemTax
+    {
+        public int id { get; set; }
+        public int company_id { get; set; }
+        public int? item_id { get; set; }
+        public string tax_id { get; set; }
+        public DateTime created_at { get; set; }
+        public DateTime updated_at { get; set; }
+        public Data<Tax> tax { get; set; }
+    }
+
+
+    public class InvoiceItem
+    {
+        public int id { get; set; }
+        public int company_id { get; set; }
         public string type { get; set; }
         public int document_id { get; set; }
-        public int item_id { get; set; }
+        public int? item_id { get; set; }
         public string name { get; set; }
         public double price { get; set; }
         public string price_formatted { get; set; }
@@ -334,12 +458,12 @@ namespace Akaunting
 
     public class Category
     {
-        public int id { get; set; }
-        public int company_id { get; set; }
+        public int? id { get; set; }
+        public int? company_id { get; set; }
         public string name { get; set; }
         public string type { get; set; }
         public string color { get; set; }
-        public bool enabled { get; set; }
+        public object enabled { get; set; }
         public object created_by { get; set; }
         public DateTime created_at { get; set; }
         public DateTime updated_at { get; set; }
@@ -359,7 +483,7 @@ namespace Akaunting
         public int document_id { get; set; }
         public int contact_id { get; set; }
         public string description { get; set; }
-        public int category_id { get; set; }
+        public int? category_id { get; set; }
         public string payment_method { get; set; }
         public object reference { get; set; }
         public bool attachment { get; set; }
@@ -401,7 +525,7 @@ namespace Akaunting
         public Data<Contact> contact { get; set; }
         public Data<Currency> currency { get; set; }
         public DataList<History> histories { get; set; }
-        public DataList<Item> items { get; set; }
+        public DataList<InvoiceItem> items { get; set; }
         public DataList<object> item_taxes { get; set; }
         public DataList<Total> totals { get; set; }
         public DataList<Transaction> transactions { get; set; }
@@ -437,11 +561,19 @@ namespace Akaunting
         public Pagination pagination { get; set; }
     }
 
-    public class AkauntingResponse<T>
+    public class AkauntingResponses<T>
     {
         public List<T> data { get; set; }
         public Meta meta { get; set; }
     }
+
+        public class AkauntingResponse<T>
+    {
+        public T data { get; set; }
+    }
+
+
+    #endregion
 
 
 }
