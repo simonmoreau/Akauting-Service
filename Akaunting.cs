@@ -55,8 +55,9 @@ namespace Akaunting
 
         public async Task<List<Contact>> Customers()
         {
-            using (var request = new HttpRequestMessage(new HttpMethod("GET"), $"/api/contacts?company_id={AkauntingDefaults.akaunting_company_id}&search=type:customer&page={AkauntingDefaults.akaunting_page}&limit={AkauntingDefaults.akaunting_limit}"))
+            using (var request = new HttpRequestMessage(new HttpMethod("GET"), $"/api/contacts?search=type:customer" + AkauntingDefaults.Params()))
             {
+                
                 var base64authorization = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{client_id}:{client_secret}"));
                 request.Headers.TryAddWithoutValidation("Authorization", $"Basic {base64authorization}");
                 request.Headers.TryAddWithoutValidation("User-Agent", "C# App");
@@ -71,8 +72,9 @@ namespace Akaunting
         public async Task<Contact> CreateCustomer(string email, string currency_code, string name)
         {
 
-            using (var request = new HttpRequestMessage(new HttpMethod("POST"), $"/api/contacts?company_id={AkauntingDefaults.akaunting_company_id}&search=type:customer&page={AkauntingDefaults.akaunting_page}&limit={AkauntingDefaults.akaunting_limit}"))
+            using (var request = new HttpRequestMessage(new HttpMethod("POST"), $"/api/contacts?search=type:customer" + AkauntingDefaults.Params()))
             {
+                
                 var base64authorization = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{client_id}:{client_secret}"));
                 request.Headers.TryAddWithoutValidation("Authorization", $"Basic {base64authorization}");
                 request.Headers.TryAddWithoutValidation("User-Agent", "C# App");
@@ -105,18 +107,32 @@ namespace Akaunting
                 {
                     contact = await JsonSerializer.DeserializeAsync<Contact>(await responseMessage.Content.ReadAsStreamAsync(), jsonSerializerOptions);
                 }
-                
+
 
                 return contact;
                 //AkauntingResponse
             }
         }
 
+        public async Task<List<Document>> Invoices()
+        {
+            using (var request = new HttpRequestMessage(new HttpMethod("GET"), $"/api/documents?search=type:invoice" + AkauntingDefaults.Params()))
+            {
+                var base64authorization = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{client_id}:{client_secret}"));
+                request.Headers.TryAddWithoutValidation("Authorization", $"Basic {base64authorization}");
+                request.Headers.TryAddWithoutValidation("User-Agent", "C# App");
+
+                HttpResponseMessage responseMessage = await Client.SendAsync(request);
+                AkauntingResponse<Document> invoices = await JsonSerializer.DeserializeAsync<AkauntingResponse<Document>>(await responseMessage.Content.ReadAsStreamAsync(), jsonSerializerOptions);
+
+                return invoices.data;
+            }
+        }
+
         public async Task CreateInvoice()
         {
-            using (var request = new HttpRequestMessage(new HttpMethod("POST"), "/api/documents?company_id=akaunting_company_id&search=type:invoice&page=akaunting_page&limit=akaunting_limit"))
-            {
-
+            using (var request = new HttpRequestMessage(new HttpMethod("POST"), $"/api/documents?search=type:invoice" + AkauntingDefaults.Params()))
+            { 
                 var base64authorization = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{client_id}:{client_secret}"));
                 request.Headers.TryAddWithoutValidation("Authorization", $"Basic {base64authorization}");
 
@@ -138,9 +154,24 @@ namespace Akaunting
             }
         }
 
+                public async Task<List<Transaction>> Incomes()
+        {
+            using (var request = new HttpRequestMessage(new HttpMethod("GET"), $"/api/transactions?search=type:income" + AkauntingDefaults.Params()))
+            {
+                var base64authorization = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{client_id}:{client_secret}"));
+                request.Headers.TryAddWithoutValidation("Authorization", $"Basic {base64authorization}");
+                request.Headers.TryAddWithoutValidation("User-Agent", "C# App");
+
+                HttpResponseMessage responseMessage = await Client.SendAsync(request);
+                AkauntingResponse<Transaction> incomes = await JsonSerializer.DeserializeAsync<AkauntingResponse<Transaction>>(await responseMessage.Content.ReadAsStreamAsync(), jsonSerializerOptions);
+
+                return incomes.data;
+            }
+        }
+
         public async Task CreateRevenue()
         {
-            using (var request = new HttpRequestMessage(new HttpMethod("POST"), "/api/transactions?company_id=akaunting_company_id&page=akaunting_page&limit=akaunting_limit&search=type:income"))
+            using (var request = new HttpRequestMessage(new HttpMethod("POST"), $"/api/transactions?search=type:income" + AkauntingDefaults.Params()))
             {
                 var base64authorization = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{client_id}:{client_secret}"));
                 request.Headers.TryAddWithoutValidation("Authorization", $"Basic {base64authorization}");
@@ -167,13 +198,17 @@ namespace Akaunting
         public static string akaunting_url = "https://app.akaunting.com";
         public static string akaunting_company_id = "101457";
         public static string akaunting_page = "1";
-        public static string akaunting_limit = "3";
+        public static string akaunting_limit = "100";
 
         public static Dictionary<string, string> currencies = new Dictionary<string, string>(){
             { "USD", "1.2" },
             { "EUR", "1" },
         };
 
+        public static string Params()
+        {
+            return $"&company_id={akaunting_company_id}&page={akaunting_page}&limit={akaunting_limit}";
+        }
 
     }
 
@@ -181,20 +216,189 @@ namespace Akaunting
     {
         public int id { get; set; }
         public int company_id { get; set; }
-        public object user_id { get; set; }
+        public string user_id { get; set; }
         public string type { get; set; }
         public string name { get; set; }
         public string email { get; set; }
-        public object tax_number { get; set; }
-        public object phone { get; set; }
-        public object address { get; set; }
-        public object website { get; set; }
+        public string tax_number { get; set; }
+        public string phone { get; set; }
+        public string address { get; set; }
+        public string website { get; set; }
         public string currency_code { get; set; }
         public bool enabled { get; set; }
         public object reference { get; set; }
         public object created_by { get; set; }
         public DateTime created_at { get; set; }
         public DateTime updated_at { get; set; }
+    }
+
+    public class Currency
+    {
+        public int id { get; set; }
+        public int company_id { get; set; }
+        public string name { get; set; }
+        public string code { get; set; }
+        public double rate { get; set; }
+        public bool enabled { get; set; }
+        public int precision { get; set; }
+        public string symbol { get; set; }
+        public int symbol_first { get; set; }
+        public string decimal_mark { get; set; }
+        public string thousands_separator { get; set; }
+        public object created_by { get; set; }
+        public DateTime created_at { get; set; }
+        public DateTime updated_at { get; set; }
+    }
+
+    public class History
+    {
+        public int id { get; set; }
+        public int company_id { get; set; }
+        public string type { get; set; }
+        public int document_id { get; set; }
+        public string status { get; set; }
+        public int notify { get; set; }
+        public string description { get; set; }
+        public DateTime created_at { get; set; }
+        public DateTime updated_at { get; set; }
+    }
+
+    public class Item
+    {
+        public int id { get; set; }
+        public int company_id { get; set; }
+        public string type { get; set; }
+        public int document_id { get; set; }
+        public int item_id { get; set; }
+        public string name { get; set; }
+        public double price { get; set; }
+        public string price_formatted { get; set; }
+        public double total { get; set; }
+        public string total_formatted { get; set; }
+        public double tax { get; set; }
+        public int? tax_id { get; set; }
+        public DateTime created_at { get; set; }
+        public DateTime updated_at { get; set; }
+    }
+
+    public class Total
+    {
+        public int id { get; set; }
+        public int company_id { get; set; }
+        public string type { get; set; }
+        public int document_id { get; set; }
+        public string code { get; set; }
+        public string name { get; set; }
+        public double amount { get; set; }
+        public string amount_formatted { get; set; }
+        public int sort_order { get; set; }
+        public DateTime created_at { get; set; }
+        public DateTime updated_at { get; set; }
+    }
+
+    public class Account
+    {
+        public int id { get; set; }
+        public int company_id { get; set; }
+        public string name { get; set; }
+        public string number { get; set; }
+        public string currency_code { get; set; }
+        public double opening_balance { get; set; }
+        public string opening_balance_formatted { get; set; }
+        public double current_balance { get; set; }
+        public string current_balance_formatted { get; set; }
+        public string bank_name { get; set; }
+        public string bank_phone { get; set; }
+        public string bank_address { get; set; }
+        public bool enabled { get; set; }
+        public object created_by { get; set; }
+        public DateTime created_at { get; set; }
+        public DateTime updated_at { get; set; }
+    }
+
+    public class Category
+    {
+        public int id { get; set; }
+        public int company_id { get; set; }
+        public string name { get; set; }
+        public string type { get; set; }
+        public string color { get; set; }
+        public bool enabled { get; set; }
+        public object created_by { get; set; }
+        public DateTime created_at { get; set; }
+        public DateTime updated_at { get; set; }
+    }
+
+    public class Transaction
+    {
+        public int id { get; set; }
+        public int company_id { get; set; }
+        public string type { get; set; }
+        public int account_id { get; set; }
+        public DateTime paid_at { get; set; }
+        public double amount { get; set; }
+        public string amount_formatted { get; set; }
+        public string currency_code { get; set; }
+        public double currency_rate { get; set; }
+        public int document_id { get; set; }
+        public int contact_id { get; set; }
+        public string description { get; set; }
+        public int category_id { get; set; }
+        public string payment_method { get; set; }
+        public object reference { get; set; }
+        public bool attachment { get; set; }
+        public object created_by { get; set; }
+        public DateTime created_at { get; set; }
+        public DateTime updated_at { get; set; }
+
+        public Data<Account> account { get; set; }
+        public Data<Category> category { get; set; }
+        public Data<Contact> contact { get; set; }
+        public Data<Currency> currency { get; set; }
+    }
+
+    public class Document
+    {
+        public int id { get; set; }
+        public int company_id { get; set; }
+        public string type { get; set; }
+        public string document_number { get; set; }
+        public string order_number { get; set; }
+        public string status { get; set; }
+        public DateTime issued_at { get; set; }
+        public DateTime due_at { get; set; }
+        public double amount { get; set; }
+        public string amount_formatted { get; set; }
+        public string currency_code { get; set; }
+        public double currency_rate { get; set; }
+        public int contact_id { get; set; }
+        public string contact_name { get; set; }
+        public string contact_email { get; set; }
+        public string contact_tax_number { get; set; }
+        public string contact_phone { get; set; }
+        public string contact_address { get; set; }
+        public string notes { get; set; }
+        public bool attachment { get; set; }
+        public object created_by { get; set; }
+        public DateTime created_at { get; set; }
+        public DateTime updated_at { get; set; }
+        public Data<Contact> contact { get; set; }
+        public Data<Currency> currency { get; set; }
+        public DataList<History> histories { get; set; }
+        public DataList<Item> items { get; set; }
+        public DataList<object> item_taxes { get; set; }
+        public DataList<Total> totals { get; set; }
+        public DataList<Transaction> transactions { get; set; }
+    }
+
+    public class Data<T>
+    {
+        public T data { get; set; }
+    }
+
+    public class DataList<T>
+    {
+        public List<T> data { get; set; }
     }
 
     public class Links

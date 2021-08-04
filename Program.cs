@@ -30,8 +30,11 @@ namespace Akaunting
 
                 AkauntingService akauntingService = host.Services.GetRequiredService<AkauntingService>();
 
-                List<Contact> contacts = await akauntingService.Customers();
-                Contact contact = await akauntingService.CreateCustomer("Aaron@elitesurvey.com.au","USD","Aaron mccann");
+                List<Contact> customers = await akauntingService.Customers();
+                List<Document> invoices = await akauntingService.Invoices();
+                List<Transaction> incomes = await akauntingService.Incomes();
+                
+                // Contact contact = await akauntingService.CreateCustomer("Aaron@elitesurvey.com.au","USD","Aaron mccann");
 
             }
             catch (Exception ex)
