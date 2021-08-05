@@ -136,9 +136,18 @@ namespace Akaunting
 
         public async Task<List<Document>> Invoices()
         {
+            List<Document> allInvoices = new List<Document>();
             AkauntingResponses<Document> invoices = await SendAsync<AkauntingResponses<Document>>("documents?search=type:invoice", "GET", null, 1);
 
-            return invoices.data;
+            allInvoices.AddRange(invoices.data);
+
+            while (invoices.meta.pagination.current_page < invoices.meta.pagination.total_pages)
+            {
+                int nextPage = invoices.meta.pagination.current_page + 1;
+                invoices = await SendAsync<AkauntingResponses<Document>>("documents?search=type:invoice", "GET", null, nextPage);
+                allInvoices.AddRange(invoices.data);
+            }
+            return allInvoices;
         }
 
         public async Task<Document> CreateInvoice(Contact customer, string currency_code, DateTime issued_at, int chronos, Item item, int quantity, Category category, string notes)

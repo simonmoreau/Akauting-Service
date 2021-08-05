@@ -49,7 +49,10 @@ namespace Akaunting
                         await Setup(host);
                         break;
                     case "paypal":
-                        await TransfertPayPalTransaction(host);
+                        await TransfertPayPalTransactions(host);
+                        break;
+                    case "stripe":
+                        await TransfertStripeTransactions(host);
                         break;
                     default:
                         logger.LogError("This command does not exist. Available commands are 'setup','paypal' or 'stripe'");
@@ -62,23 +65,76 @@ namespace Akaunting
             }
         }
 
-        private static async Task TransfertPayPalTransaction(IHost host)
+        private static async Task TransfertStripeTransactions(IHost host)
         {
-            // Fetch last paypal transcations
-            PaypalService paypal = host.Services.GetRequiredService<PaypalService>();
-
-            await paypal.RefreshToken();
-            PaypalTransactions paypalTransactions = await paypal.GetLatestTransactions(20);
-
+            // Fetch last stripe transactions
+            StripeService stripeService = host.Services.GetRequiredService<StripeService>();
+            StripeTransactions stripeTransactions = await stripeService.GetLatestTransactions(7);
 
             // Fetch Akaunting categories and vendors
             AkauntingService akauntingService = host.Services.GetRequiredService<AkauntingService>();
             AkauntingReferences akauntingReferences = await FetchAkauntingReferences(akauntingService);
 
-            // Get all customers
-            List<Contact> existingCustomers = await akauntingService.Customers();
-            // List<Document> invoices = await akauntingService.Invoices();
-            // List<Transaction> incomes = await akauntingService.Incomes();
+            Account n26Account = akauntingReferences.accountsDictionary["N26"];
+            Item item = akauntingReferences.itemsDictionary["10 conversions"];
+            Category itemWebCat = akauntingReferences.categoriesDictionary["itemWeb App"];
+            Category incomeWebCat = akauntingReferences.categoriesDictionary["incomeWeb App"];
+            Category expenseFeeCat = akauntingReferences.categoriesDictionary["expenseFee"];
+            Contact stripeVendor = akauntingReferences.vendorsDictionary["Stripe"];
+
+            List<Task> TaskList = new List<Task>();
+
+            int chronos = 1;
+
+            foreach (Datum transactionDetail in stripeTransactions.data)
+            {
+                if (transactionDetail.status == "succeeded")
+                {
+                    string name = transactionDetail.charges.data[0].billing_details.name;
+                    string email = transactionDetail.charges.data[0].billing_details.email;
+                    string description = $"Stripe Payment ID: {transactionDetail.id}";
+
+                    DateTime transactionDate = StripeService.UnixTimeStampToDateTime(transactionDetail.created);
+
+                    // Calculate the chrono value
+                    string documentNumber = transactionDate.ToString("yyyyMMdd", DateTimeFormatInfo.InvariantInfo);
+                    if (akauntingReferences.chronosDictionary.ContainsKey(documentNumber))
+                    {
+                        chronos = akauntingReferences.chronosDictionary[documentNumber] + 1;
+                        akauntingReferences.chronosDictionary[documentNumber] = chronos;
+                    }
+                    else
+                    {
+                        akauntingReferences.chronosDictionary.Add(documentNumber, chronos);
+                    }
+
+
+                    double feeAmount = transactionDetail.charges.data[0].balance_transaction.fee / 100;
+
+                    int quantity = Convert.ToInt32(transactionDetail.amount / 1000);
+
+                    TaskList.Add(CreateAkauntingElements(
+        email, name, n26Account, item, incomeWebCat, expenseFeeCat,
+        stripeVendor, akauntingService, chronos, quantity, description, transactionDate, feeAmount, akauntingReferences.customers));
+
+                }
+            }
+
+            await Task.WhenAll(TaskList.ToArray());
+
+        }
+
+        private static async Task TransfertPayPalTransactions(IHost host)
+        {
+            // Fetch last paypal transactions
+            PaypalService paypal = host.Services.GetRequiredService<PaypalService>();
+
+            await paypal.RefreshToken();
+            PaypalTransactions paypalTransactions = await paypal.GetLatestTransactions(20);
+
+            // Fetch Akaunting categories and vendors
+            AkauntingService akauntingService = host.Services.GetRequiredService<AkauntingService>();
+            AkauntingReferences akauntingReferences = await FetchAkauntingReferences(akauntingService);
 
             Account payPalUSDAccount = akauntingReferences.accountsDictionary["PayPal USD"];
             Account payPalEURAccount = akauntingReferences.accountsDictionary["PayPal EUR"];
@@ -93,8 +149,7 @@ namespace Akaunting
             List<Task> TaskList = new List<Task>();
 
             int chronos = 1;
-            List<DateTime> transactionDates = new List<DateTime>();
-            
+
             foreach (TransactionDetail transactionDetail in paypalTransactions.transaction_details)
             {
                 if (transactionDetail.cart_info?.item_details?.Count > 0)
@@ -105,11 +160,18 @@ namespace Akaunting
                         string email = transactionDetail.payer_info.email_address;
                         string description = $"PayPal Transaction ID: {transactionDetail.transaction_info.transaction_id}";
                         DateTime transactionDate = transactionDetail.transaction_info.transaction_updated_date;
-                        
+
                         // Calculate the chrono value
-                        DateTime dayOfTransaction = new DateTime(transactionDate.Year,transactionDate.Month,transactionDate.Day);
-                        transactionDates.Add(dayOfTransaction);
-                        chronos = transactionDates.Where(d => d == dayOfTransaction).Count();
+                        string documentNumber = transactionDate.ToString("yyyyMMdd", DateTimeFormatInfo.InvariantInfo);
+                        if (akauntingReferences.chronosDictionary.ContainsKey(documentNumber))
+                        {
+                            chronos = akauntingReferences.chronosDictionary[documentNumber] + 1;
+                            akauntingReferences.chronosDictionary[documentNumber] = chronos;
+                        }
+                        else
+                        {
+                            akauntingReferences.chronosDictionary.Add(documentNumber, chronos);
+                        }
 
                         double feeAmount = Convert.ToDouble(transactionDetail.transaction_info.fee_amount.value, CultureInfo.InvariantCulture);
                         if (feeAmount < 0) { feeAmount = feeAmount * (-1); }
@@ -118,9 +180,9 @@ namespace Akaunting
 
                         TaskList.Add(CreateAkauntingElements(
                             email, name, payPalUSDAccount, item, incomePluginCat, expenseFeeCat,
-                            paypalVendor, akauntingService, chronos, quantity, description, transactionDate, feeAmount,existingCustomers));
+                            paypalVendor, akauntingService, chronos, quantity, description, transactionDate, feeAmount, akauntingReferences.customers));
                     } // 100 GB (Google Drive)
-                    else if (transactionDetail.cart_info.item_details[0]?.item_name == "100 GB (Google Drive)" && 
+                    else if (transactionDetail.cart_info.item_details[0]?.item_name == "100 GB (Google Drive)" &&
                     transactionDetail.payer_info.payer_name.alternate_full_name == "Google")
                     {
                         string description = $"PayPal Transaction ID: {transactionDetail.transaction_info.transaction_id}";
@@ -146,7 +208,7 @@ namespace Akaunting
             int chronos, int quantity, string description, DateTime transactionDate, double feeAmount, List<Contact> existingCustomers)
         {
             // Check if the customer exist, create him if not
-            Contact customer = existingCustomers.Where( c => c.email == email).FirstOrDefault();
+            Contact customer = existingCustomers.Where(c => c.email == email).FirstOrDefault();
             if (customer == null) { customer = await akauntingService.CreateCustomer(email, account.currency_code, name); }
 
             Document invoice = await akauntingService.CreateInvoice(
@@ -159,6 +221,8 @@ namespace Akaunting
         private static async Task<AkauntingReferences> FetchAkauntingReferences(AkauntingService akauntingService)
         {
 
+            List<Task> TaskList = new List<Task>();
+            
             AkauntingReferences akauntingReferences = new AkauntingReferences();
 
             List<Account> accounts = await akauntingService.Accounts();
@@ -172,6 +236,30 @@ namespace Akaunting
 
             List<Contact> vendors = await akauntingService.Vendors();
             akauntingReferences.vendorsDictionary = vendors.ToDictionary(x => x.name, x => x);
+
+            // Get all customers
+            List<Contact> existingCustomers = await akauntingService.Customers();
+            akauntingReferences.customers = existingCustomers;
+
+            // Get all invoices
+            List<Document> invoices = await akauntingService.Invoices();
+            akauntingReferences.invoices = invoices;
+
+            // Build the invoice chrono dictonary
+            Dictionary<string, int> chronosDictionary = invoices
+                .GroupBy(o =>
+                {
+                    if (o.document_number != null && o.document_number.Contains('-'))
+                    {
+                        return o.document_number.Split('-')[0];
+                    }
+                    else
+                    {
+                        return "INV";
+                    }
+                })
+                .ToDictionary(g => g.Key, g => g.ToList().Count);
+            akauntingReferences.chronosDictionary = chronosDictionary;
 
             return akauntingReferences;
         }
@@ -251,6 +339,12 @@ namespace Akaunting
                        Proxy = proxy,
                        AutomaticDecompression = System.Net.DecompressionMethods.GZip
                    });
+                services.AddHttpClient<StripeService>().ConfigurePrimaryHttpMessageHandler(handler =>
+                    new HttpClientHandler()
+                    {
+                        Proxy = proxy,
+                        AutomaticDecompression = System.Net.DecompressionMethods.GZip
+                    });
             }).ConfigureLogging(logging =>
             {
                 logging.ClearProviders();
@@ -272,6 +366,11 @@ namespace Akaunting
         public Dictionary<string, Item> itemsDictionary { get; set; }
         public Dictionary<string, Category> categoriesDictionary { get; set; }
         public Dictionary<string, Contact> vendorsDictionary { get; set; }
+        public List<Contact> customers { get; set; }
+
+        public List<Document> invoices { get; set; }
+        // Build the invoice chrono dictonary
+        public Dictionary<string, int> chronosDictionary { get; set; }
     }
 
 }
