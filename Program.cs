@@ -13,6 +13,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System.CommandLine;
 using System.CommandLine.Invocation;
+using System.Globalization;
 
 namespace Akaunting
 {
@@ -41,15 +42,14 @@ namespace Akaunting
 
             try
             {
-                AkauntingService akauntingService = host.Services.GetRequiredService<AkauntingService>();
 
                 switch (command)
                 {
                     case "setup":
-                        await Setup(akauntingService);
+                        await Setup(host);
                         break;
                     case "paypal":
-                        await TransfertData(akauntingService);
+                        await TransfertPayPalTransaction(host);
                         break;
                     default:
                         logger.LogError("This command does not exist. Available commands are 'setup','paypal' or 'stripe'");
@@ -62,35 +62,98 @@ namespace Akaunting
             }
         }
 
-        private static async Task TransfertData(AkauntingService akauntingService)
+        private static async Task TransfertPayPalTransaction(IHost host)
         {
+            // Fetch last paypal transcations
+            PaypalService paypal = host.Services.GetRequiredService<PaypalService>();
 
-            // PaypalService paypal = host.Services.GetRequiredService<PaypalService>();
+            await paypal.RefreshToken();
+            PaypalTransactions paypalTransactions = await paypal.GetLatestTransactions(20);
 
-            // await paypal.RefreshToken();
-            // await paypal.GetLatestTransactions();
 
+            // Fetch Akaunting categories and vendors
+            AkauntingService akauntingService = host.Services.GetRequiredService<AkauntingService>();
             AkauntingReferences akauntingReferences = await FetchAkauntingReferences(akauntingService);
 
-            List<Contact> customers = await akauntingService.Customers();
-            List<Document> invoices = await akauntingService.Invoices();
-            List<Transaction> incomes = await akauntingService.Incomes();
+            // Get all customers
+            List<Contact> existingCustomers = await akauntingService.Customers();
+            // List<Document> invoices = await akauntingService.Invoices();
+            // List<Transaction> incomes = await akauntingService.Incomes();
 
-            Account account = akauntingReferences.accountsDictionary["PayPal"];
+            Account payPalUSDAccount = akauntingReferences.accountsDictionary["PayPal USD"];
+            Account payPalEURAccount = akauntingReferences.accountsDictionary["PayPal EUR"];
             Item item = akauntingReferences.itemsDictionary["Group Clashes"];
             Category itemPluginCat = akauntingReferences.categoriesDictionary["itemPlugin"];
             Category incomePluginCat = akauntingReferences.categoriesDictionary["incomePlugin"];
             Category expenseFeeCat = akauntingReferences.categoriesDictionary["expenseFee"];
+            Category expenseSoftwareCat = akauntingReferences.categoriesDictionary["expenseSoftware"];
             Contact paypalVendor = akauntingReferences.vendorsDictionary["PayPal"];
+            Contact googleVendor = akauntingReferences.vendorsDictionary["Google"];
 
-            for (int i = 1; i < 6; i++)
+            List<Task> TaskList = new List<Task>();
+
+            int chronos = 1;
+            List<DateTime> transactionDates = new List<DateTime>();
+            
+            foreach (TransactionDetail transactionDetail in paypalTransactions.transaction_details)
             {
+                if (transactionDetail.cart_info?.item_details?.Count > 0)
+                {
+                    if (transactionDetail.cart_info.item_details[0]?.item_name == "Group Clashes")
+                    {
+                        string name = transactionDetail.payer_info.payer_name.alternate_full_name;
+                        string email = transactionDetail.payer_info.email_address;
+                        string description = $"PayPal Transaction ID: {transactionDetail.transaction_info.transaction_id}";
+                        DateTime transactionDate = transactionDetail.transaction_info.transaction_updated_date;
+                        
+                        // Calculate the chrono value
+                        DateTime dayOfTransaction = new DateTime(transactionDate.Year,transactionDate.Month,transactionDate.Day);
+                        transactionDates.Add(dayOfTransaction);
+                        chronos = transactionDates.Where(d => d == dayOfTransaction).Count();
 
+                        double feeAmount = Convert.ToDouble(transactionDetail.transaction_info.fee_amount.value, CultureInfo.InvariantCulture);
+                        if (feeAmount < 0) { feeAmount = feeAmount * (-1); }
 
-                Document invoice = await akauntingService.CreateInvoice(customers[i], account.currency_code, DateTime.Now, i, item, i, incomePluginCat);
-                Transaction revenue = await akauntingService.CreateIncome(account, invoice, incomePluginCat, customers[i]);
-                Transaction expense = await akauntingService.CreateExpense(account, invoice, expenseFeeCat, paypalVendor);
+                        int quantity = Convert.ToInt32(transactionDetail.cart_info.item_details[0].item_quantity, CultureInfo.InvariantCulture);
+
+                        TaskList.Add(CreateAkauntingElements(
+                            email, name, payPalUSDAccount, item, incomePluginCat, expenseFeeCat,
+                            paypalVendor, akauntingService, chronos, quantity, description, transactionDate, feeAmount,existingCustomers));
+                    } // 100 GB (Google Drive)
+                    else if (transactionDetail.cart_info.item_details[0]?.item_name == "100 GB (Google Drive)" && 
+                    transactionDetail.payer_info.payer_name.alternate_full_name == "Google")
+                    {
+                        string description = $"PayPal Transaction ID: {transactionDetail.transaction_info.transaction_id}";
+                        DateTime transactionDate = transactionDetail.transaction_info.transaction_updated_date;
+
+                        double transactionAmount = Convert.ToDouble(transactionDetail.transaction_info.transaction_amount.value, CultureInfo.InvariantCulture);
+                        if (transactionAmount < 0) { transactionAmount = transactionAmount * (-1); }
+
+                        TaskList.Add(akauntingService.CreateExpense(
+                            payPalEURAccount, expenseSoftwareCat, googleVendor,
+                            description, transactionAmount, transactionDate));
+                    }
+                }
             }
+
+            await Task.WhenAll(TaskList.ToArray());
+
+        }
+
+        private static async Task CreateAkauntingElements(
+            string email, string name, Account account, Item item,
+            Category incomeCat, Category expenseCat, Contact vendor, AkauntingService akauntingService,
+            int chronos, int quantity, string description, DateTime transactionDate, double feeAmount, List<Contact> existingCustomers)
+        {
+            // Check if the customer exist, create him if not
+            Contact customer = existingCustomers.Where( c => c.email == email).FirstOrDefault();
+            if (customer == null) { customer = await akauntingService.CreateCustomer(email, account.currency_code, name); }
+
+            Document invoice = await akauntingService.CreateInvoice(
+                customer, account.currency_code, transactionDate,
+                chronos, item, quantity, incomeCat, description);
+            Transaction revenue = await akauntingService.CreateIncome(account, invoice, incomeCat, customer, description);
+            Transaction expense = await akauntingService.CreateExpense(account, expenseCat, vendor, description, feeAmount, transactionDate);
         }
 
         private static async Task<AkauntingReferences> FetchAkauntingReferences(AkauntingService akauntingService)
@@ -113,8 +176,9 @@ namespace Akaunting
             return akauntingReferences;
         }
 
-        private static async Task Setup(AkauntingService akauntingService)
+        private static async Task Setup(IHost host)
         {
+            AkauntingService akauntingService = host.Services.GetRequiredService<AkauntingService>();
 
             // Create categories
             logger.LogInformation("Creating categories ...");
@@ -135,7 +199,7 @@ namespace Akaunting
             // Create vendors
             logger.LogInformation("Creating vendors ...");
             CreatedVendor[] vendors = new CreatedVendor[] {
-                    new CreatedVendor("Google","contact@google.com","EUR"),
+                    new CreatedVendor("Google","wallet-disputes-eu@google.com","EUR"),
                     new CreatedVendor("PayPal","contact@paypal.com","USD"),
                     new CreatedVendor("Cloudflare Inc","contact@cloudflare.com","EUR"),
                     new CreatedVendor("Stripe","contact@stripe.com","EUR"),
@@ -148,7 +212,8 @@ namespace Akaunting
             logger.LogInformation("Creating accounts ...");
             CreatedAccount[] accounts = new CreatedAccount[] {
                     new CreatedAccount("N26","EUR","NTSBDEB1XXX"),
-                    new CreatedAccount("PayPal","USD", "PayPal")
+                    new CreatedAccount("PayPal USD","USD", "PayPal"),
+                    new CreatedAccount("PayPal EUR","EUR", "PayPal")
                  };
 
             await Task.WhenAll(accounts.Select(a => akauntingService.CreateAccount(a)));

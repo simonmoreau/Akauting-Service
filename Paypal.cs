@@ -31,15 +31,19 @@ namespace Akaunting
             Configuration = configuration;
         }
 
-        public async Task GetLatestTransactions()
+        public async Task<PaypalTransactions> GetLatestTransactions(int days)
         {
             Client.DefaultRequestHeaders.Accept.Clear();
             Client.DefaultRequestHeaders.Add("Authorization", "Bearer " + token);
 
-            Task<Stream> streamTask = Client.GetStreamAsync("/v1/reporting/transactions?start_date=2021-08-01T00:00:00-0700&end_date=2021-08-30T23:59:59-0700&fields=all");
+            string endDate = DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss-0700");
+
+            string startDate = (DateTime.Now - new TimeSpan(days,0,0,0)).ToString("yyyy-MM-ddTHH:mm:ss-0700");
+
+            Task<Stream> streamTask = Client.GetStreamAsync($"/v1/reporting/transactions?start_date={startDate}&end_date={endDate}&fields=all&page_size=100&page=1");
             PaypalTransactions paypalTransactions = await JsonSerializer.DeserializeAsync<PaypalTransactions>(await streamTask, jsonSerializerOptions);
 
-            Console.Write(paypalTransactions.total_items);
+            return paypalTransactions;
         }
 
         public async Task RefreshToken()
