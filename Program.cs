@@ -55,7 +55,6 @@ namespace Akaunting
                         logger.LogError("This command does not exist. Available commands are 'setup','paypal' or 'stripe'");
                         break;
                 }
-
             }
             catch (Exception ex)
             {
@@ -71,47 +70,64 @@ namespace Akaunting
             // await paypal.RefreshToken();
             // await paypal.GetLatestTransactions();
 
-
-            List<Account> accounts = await akauntingService.Accounts();
-            Account account = accounts.Where(x => x.name == "Paypal").FirstOrDefault();
-
-            List<Item> items = await akauntingService.Items();
-            Item item = items.Where(x => x.name == "Group Clashes").FirstOrDefault();
-
-            List<Category> categories = await akauntingService.Categories();
-            Category category = categories.Where(x => x.name == "Plugin").FirstOrDefault();
-            Category payPalCategory = categories.Where(x => x.name == "Paypal Fee").FirstOrDefault();
-
-            List<Contact> vendors = await akauntingService.Vendors();
-            Contact paypalVendor = vendors.Where(x => x.name == "Paypal").FirstOrDefault();
+            AkauntingReferences akauntingReferences = await FetchAkauntingReferences(akauntingService);
 
             List<Contact> customers = await akauntingService.Customers();
             List<Document> invoices = await akauntingService.Invoices();
             List<Transaction> incomes = await akauntingService.Incomes();
 
+            Account account = akauntingReferences.accountsDictionary["PayPal"];
+            Item item = akauntingReferences.itemsDictionary["Group Clashes"];
+            Category itemPluginCat = akauntingReferences.categoriesDictionary["itemPlugin"];
+            Category incomePluginCat = akauntingReferences.categoriesDictionary["incomePlugin"];
+            Category expenseFeeCat = akauntingReferences.categoriesDictionary["expenseFee"];
+            Contact paypalVendor = akauntingReferences.vendorsDictionary["PayPal"];
+
             for (int i = 1; i < 6; i++)
             {
-                Document invoice = await akauntingService.CreateInvoice(customers[i], account.currency_code, DateTime.Now, i, item, i, category);
-                Transaction revenue = await akauntingService.CreateIncome(account, invoice, category, customers[i]);
-                Transaction expense = await akauntingService.CreateExpense(account, invoice, payPalCategory, paypalVendor);
+
+
+                Document invoice = await akauntingService.CreateInvoice(customers[i], account.currency_code, DateTime.Now, i, item, i, incomePluginCat);
+                Transaction revenue = await akauntingService.CreateIncome(account, invoice, incomePluginCat, customers[i]);
+                Transaction expense = await akauntingService.CreateExpense(account, invoice, expenseFeeCat, paypalVendor);
             }
         }
 
-        static async Task Setup(AkauntingService akauntingService)
+        private static async Task<AkauntingReferences> FetchAkauntingReferences(AkauntingService akauntingService)
+        {
+
+            AkauntingReferences akauntingReferences = new AkauntingReferences();
+
+            List<Account> accounts = await akauntingService.Accounts();
+            akauntingReferences.accountsDictionary = accounts.ToDictionary(x => x.name, x => x);
+
+            List<Item> items = await akauntingService.Items();
+            akauntingReferences.itemsDictionary = items.ToDictionary(x => x.name, x => x);
+
+            List<Category> categories = await akauntingService.Categories();
+            akauntingReferences.categoriesDictionary = categories.ToDictionary(x => x.type + x.name, x => x);
+
+            List<Contact> vendors = await akauntingService.Vendors();
+            akauntingReferences.vendorsDictionary = vendors.ToDictionary(x => x.name, x => x);
+
+            return akauntingReferences;
+        }
+
+        private static async Task Setup(AkauntingService akauntingService)
         {
 
             // Create categories
             logger.LogInformation("Creating categories ...");
             CreatedCategory[] categories = new CreatedCategory[] {
-                    new CreatedCategory("Plugin","income","#efsgdg"),
-                    new CreatedCategory("Consulting","income","#efsgdg"),
-                    new CreatedCategory("Web App","income","#efsgdg"),
-                    new CreatedCategory("Plugin","item","#efsgdg"),
-                    new CreatedCategory("Consulting","item","#efsgdg"),
-                    new CreatedCategory("Web App","item","#efsgdg"),
-                    new CreatedCategory("Fee","expense","#efsgdg"),
-                    new CreatedCategory("Software","expense","#efsgdg"),
-                    new CreatedCategory("Taxes","expense","#efsgdg"),
+                    new CreatedCategory("Plugin","income","#fad390"),
+                    new CreatedCategory("Consulting","income","#6a89cc"),
+                    new CreatedCategory("Web App","income","#b8e994"),
+                    new CreatedCategory("Plugin","item","#f6b93b"),
+                    new CreatedCategory("Consulting","item","#4a69bd"),
+                    new CreatedCategory("Web App","item","#78e08f"),
+                    new CreatedCategory("Fee","expense","#fa983a"),
+                    new CreatedCategory("Software","expense","#1e3799"),
+                    new CreatedCategory("Taxes","expense","#38ada9"),
                  };
 
             await Task.WhenAll(categories.Select(c => akauntingService.CreateCategory(c)));
@@ -184,4 +200,13 @@ namespace Akaunting
             return host;
         }
     }
+
+    public class AkauntingReferences
+    {
+        public Dictionary<string, Account> accountsDictionary { get; set; }
+        public Dictionary<string, Item> itemsDictionary { get; set; }
+        public Dictionary<string, Category> categoriesDictionary { get; set; }
+        public Dictionary<string, Contact> vendorsDictionary { get; set; }
+    }
+
 }
