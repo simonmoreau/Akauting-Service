@@ -72,7 +72,7 @@ namespace Akaunting
 
         public async Task<Account> CreateAccount(CreatedAccount createdAccount)
         {
-            AccountBody accountBody = new AccountBody(createdAccount.name, createdAccount.currency_code);
+            AccountBody accountBody = new AccountBody(createdAccount.name, createdAccount.currency_code, createdAccount.number);
             AkauntingResponse<Account> accounts = await SendAsync<AkauntingResponse<Account>>("accounts?", "POST", accountBody);
 
             return accounts.data;
@@ -281,18 +281,18 @@ namespace Akaunting
 
     public class AccountBody
     {
-        public AccountBody(string name, string currency_code)
+        public AccountBody(string name, string currency_code, string number)
         {
             this.name = name;
             this.bank_name = name;
-            this.number = 0;
+            this.number = number;
             this.currency_code = currency_code;
             this.bank_phone = "";
             this.bank_address = "";
             this.enabled = 1;
         }
         public string name { get; set; }
-        public int number { get; set; }
+        public string number { get; set; }
         public string currency_code { get; set; }
         public int opening_balance { get; set; }
         public string bank_name { get; set; }
@@ -586,12 +586,14 @@ namespace Akaunting
 
     public class CreatedAccount
     {
-        public CreatedAccount(string name, string currency_code)
+        public CreatedAccount(string name, string currency_code, string number)
         {
             this.name = name;
+            this.number = number;
             this.currency_code = currency_code;
         }
         public string name { get; set; }
+        public string number { get; set; }
         public string currency_code { get; set; }
     }
 

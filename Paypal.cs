@@ -44,8 +44,6 @@ namespace Akaunting
 
         public async Task RefreshToken()
         {
-            var key = Configuration["MyKey"];
-            var name = Configuration["Position:Name"];
 
             Client.DefaultRequestHeaders.Accept.Clear();
 
