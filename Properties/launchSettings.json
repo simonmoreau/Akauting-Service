@@ -1,6 +1,6 @@
 {
   "profiles": {
-    "Akauting": {
+    "Akaunting": {
       "commandName": "Project",
       "commandLineArgs": "--port 7248",
       "launchBrowser": false
